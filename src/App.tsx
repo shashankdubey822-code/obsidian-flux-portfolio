@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from "react";
 import { motion, useScroll, useSpring, AnimatePresence } from "motion/react";
 import { 
   Github, 
@@ -20,13 +21,10 @@ import {
   Loader2,
   Bot
 } from "lucide-react";
-import { useState, useRef, useEffect, useMemo } from "react";
-import { GoogleGenAI } from "@google/genai";
 
-console.log("App.tsx module loaded");
-
-const GEMINI_API_KEY = (typeof process !== "undefined" ? process.env.GEMINI_API_KEY : "") || "";
-const modelName = "gemini-1.5-flash"; // Using a more standard model name
+// Use VITE_ prefix for env vars accessible in client-side code on Vercel
+const HF_TOKEN = import.meta.env.VITE_HF_TOKEN || "";
+const HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.3";
 
 const PROJECTS = [
   {
@@ -86,27 +84,13 @@ const SKILLS = [
 ];
 
 export default function App() {
-  console.log("App component rendering...");
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: "user" | "ai"; content: string }[]>([
-    { role: "ai", content: "Hello! I'm Aura, Shashank's AI assistant. Ask me anything about his technical expertise or his Hugging Face projects." }
+    { role: "ai", content: "Hello! I'm Aura. I can answer questions about Shashank's GitHub and Hugging Face projects. What would you like to know?" }
   ]);
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
-
-  const ai = useMemo(() => {
-    try {
-      if (!GEMINI_API_KEY || GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
-        console.warn("Gemini API Key is missing or default.");
-        return null;
-      }
-      return new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-    } catch (e) {
-      console.error("Failed to initialize GoogleGenAI:", e);
-      return null;
-    }
-  }, []);
 
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, {
@@ -115,49 +99,70 @@ export default function App() {
     restDelta: 0.001
   });
 
-  const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const handleSendMessage = async () => {
     if (!input.trim() || isTyping) return;
-    if (!ai) {
-      setMessages(prev => [...prev, { role: "user", content: input.trim() }, { role: "ai", content: "I'm sorry, my AI core is not configured. Please set a valid API key." }]);
-      setInput("");
-      return;
-    }
 
     const userMessage = input.trim();
     setInput("");
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setIsTyping(true);
 
+    // Strict validation: Check if user is asking about the portfolio/projects
+    const projectKeywords = ["project", "github", "hugging face", "hf", "shashank", "attendance", "datalens", "mru", "predictor", "api", "tech", "skill"];
+    const isRelevant = projectKeywords.some(keyword => userMessage.toLowerCase().includes(keyword));
+
+    if (!isRelevant) {
+      setMessages(prev => [...prev, { role: "ai", content: "I am specialized only in Shashank's technical portfolio. Please ask about his GitHub repos or Hugging Face spaces!" }]);
+      setIsTyping(false);
+      return;
+    }
+
     try {
-      const response = await ai.models.generateContent({
-        model: modelName,
-        contents: userMessage,
-        config: {
-          systemInstruction: `You are Aura, the AI assistant for Shashank Dubey's e-portfolio. 
-          Shashank is a Software Engineer and AI Architect.
-          His key projects are on Hugging Face (username: vrfefavr):
-          1. Attendance Insightface: Real-time face recognition for attendance.
-          2. Student Performance Predictor: ML project for grade forecasting.
-          3. DataLens Dashboard: AI-driven CSV analytics.
-          4. MRU Admissions Dashboard: Interactive university data dashboard.
-          5. Attendance API: Webcam-based attendance automation.
-          He is skilled in Python, TypeScript, React, Docker, and ML frameworks.
-          Answer questions professionally and highlight his technical depth. Keep responses concise.`
-        }
+      if (!HF_TOKEN) {
+        throw new Error("Missing HF_TOKEN");
+      }
+
+      const prompt = `[INST] You are Aura, the strict AI assistant for Shashank Dubey's e-portfolio.
+Your ONLY goal is to discuss Shashank's projects.
+Projects:
+1. Attendance Insightface (HF): Face recognition system.
+2. Student Performance Predictor (HF): ML grade forecasting.
+3. DataLens Dashboard (HF): AI CSV analytics.
+4. MRU Admissions Dashboard (HF): Data visualization.
+5. Attendance API (HF): Webcam attendance.
+GitHub: shashankdubey822-code
+Skills: Python, TypeScript, React, Docker, FastAPI.
+
+Rules:
+- Keep answers under 3 sentences.
+- ONLY talk about the projects above.
+- If asked about anything else, politely refuse.
+
+User: ${userMessage} [/INST]`;
+
+      const response = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
+        headers: { Authorization: `Bearer ${HF_TOKEN}`, "Content-Type": "application/json" },
+        method: "POST",
+        body: JSON.stringify({
+          inputs: prompt,
+          parameters: { max_new_tokens: 150, temperature: 0.7, return_full_text: false }
+        }),
       });
 
-      setMessages(prev => [...prev, { role: "ai", content: response.text || "I'm having trouble connecting to my neural network. Please try again." }]);
+      const data = await response.json();
+      let aiResponse = data[0]?.generated_text || "I'm processing your request. Please ask specifically about Shashank's projects.";
+      
+      // Clean up response if model includes prompt
+      aiResponse = aiResponse.replace(/\[INST\][\s\S]*?\[\/INST\]/, "").trim();
+
+      setMessages(prev => [...prev, { role: "ai", content: aiResponse }]);
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: "ai", content: "Error: My systems are offline. Please check back later." }]);
+      setMessages(prev => [...prev, { role: "ai", content: "My neural link to Hugging Face is currently busy. Please check back in a moment!" }]);
     } finally {
       setIsTyping(false);
     }
