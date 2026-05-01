@@ -23,7 +23,9 @@ import {
 import { useState, useRef, useEffect, useMemo } from "react";
 import { GoogleGenAI } from "@google/genai";
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+console.log("App.tsx module loaded");
+
+const GEMINI_API_KEY = (typeof process !== "undefined" ? process.env.GEMINI_API_KEY : "") || "";
 const modelName = "gemini-1.5-flash"; // Using a more standard model name
 
 const PROJECTS = [
@@ -84,6 +86,7 @@ const SKILLS = [
 ];
 
 export default function App() {
+  console.log("App component rendering...");
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: "user" | "ai"; content: string }[]>([
     { role: "ai", content: "Hello! I'm Aura, Shashank's AI assistant. Ask me anything about his technical expertise or his Hugging Face projects." }
