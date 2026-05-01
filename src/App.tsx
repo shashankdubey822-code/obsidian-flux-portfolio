@@ -24,7 +24,7 @@ import {
 
 // Use VITE_ prefix for env vars accessible in client-side code on Vercel
 const HF_TOKEN = import.meta.env.VITE_HF_TOKEN || "";
-const HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.3";
+const HF_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct";
 
 const PROJECTS = [
   {
@@ -111,58 +111,61 @@ export default function App() {
     setMessages(prev => [...prev, { role: "user", content: userMessage }]);
     setIsTyping(true);
 
+    if (!HF_TOKEN) {
+      setMessages(prev => [...prev, { role: "ai", content: "⚠️ Configuration Error: VITE_HF_TOKEN is missing in Vercel. Please add it to your environment variables." }]);
+      setIsTyping(false);
+      return;
+    }
+
     // Strict validation: Check if user is asking about the portfolio/projects
-    const projectKeywords = ["project", "github", "hugging face", "hf", "shashank", "attendance", "datalens", "mru", "predictor", "api", "tech", "skill"];
+    const projectKeywords = ["project", "github", "hugging face", "hf", "shashank", "attendance", "datalens", "mru", "predictor", "api", "tech", "skill", "who", "dubey", "shashank"];
     const isRelevant = projectKeywords.some(keyword => userMessage.toLowerCase().includes(keyword));
 
     if (!isRelevant) {
-      setMessages(prev => [...prev, { role: "ai", content: "I am specialized only in Shashank's technical portfolio. Please ask about his GitHub repos or Hugging Face spaces!" }]);
+      setMessages(prev => [...prev, { role: "ai", content: "I am specialized only in Shashank's technical portfolio. Please ask about his GitHub repos, skills, or Hugging Face spaces!" }]);
       setIsTyping(false);
       return;
     }
 
     try {
-      if (!HF_TOKEN) {
-        throw new Error("Missing HF_TOKEN");
-      }
-
-      const prompt = `[INST] You are Aura, the strict AI assistant for Shashank Dubey's e-portfolio.
-Your ONLY goal is to discuss Shashank's projects.
-Projects:
-1. Attendance Insightface (HF): Face recognition system.
-2. Student Performance Predictor (HF): ML grade forecasting.
-3. DataLens Dashboard (HF): AI CSV analytics.
-4. MRU Admissions Dashboard (HF): Data visualization.
-5. Attendance API (HF): Webcam attendance.
-GitHub: shashankdubey822-code
-Skills: Python, TypeScript, React, Docker, FastAPI.
-
-Rules:
-- Keep answers under 3 sentences.
-- ONLY talk about the projects above.
-- If asked about anything else, politely refuse.
-
-User: ${userMessage} [/INST]`;
+      const prompt = `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
+You are Aura, the professional AI assistant for Shashank Dubey.
+Shashank's Projects: Attendance Insightface, Student Performance Predictor, DataLens Dashboard, MRU Admissions Dashboard, Attendance API.
+GitHub: shashankdubey822-code.
+Skills: Python, TypeScript, React, Docker, ML.
+RULES: 
+- Answer only about Shashank.
+- Keep it under 2 sentences.
+- Be concise.<|eot_id|><|start_header_id|>user<|end_header_id|>${userMessage}<|eot_id|><|start_header_id|>assistant<|end_header_id|>`;
 
       const response = await fetch(`https://api-inference.huggingface.co/models/${HF_MODEL}`, {
         headers: { Authorization: `Bearer ${HF_TOKEN}`, "Content-Type": "application/json" },
         method: "POST",
         body: JSON.stringify({
           inputs: prompt,
-          parameters: { max_new_tokens: 150, temperature: 0.7, return_full_text: false }
+          parameters: { max_new_tokens: 100, temperature: 0.5, return_full_text: false }
         }),
       });
 
       const data = await response.json();
-      let aiResponse = data[0]?.generated_text || "I'm processing your request. Please ask specifically about Shashank's projects.";
+
+      if (data.error && data.error.includes("currently loading")) {
+        const waitTime = Math.round(data.estimated_time || 20);
+        setMessages(prev => [...prev, { role: "ai", content: `Aura is waking up (Model is loading)... please wait about ${waitTime} seconds and try again!` }]);
+        return;
+      }
+
+      let aiResponse = data[0]?.generated_text || data.generated_text || "I'm here to help! Ask me about Shashank's projects.";
       
-      // Clean up response if model includes prompt
-      aiResponse = aiResponse.replace(/\[INST\][\s\S]*?\[\/INST\]/, "").trim();
+      // Clean up for Llama-3 format
+      if (aiResponse.includes("<|start_header_id|>assistant<|end_header_id|>")) {
+        aiResponse = aiResponse.split("<|start_header_id|>assistant<|end_header_id|>").pop().replace("<|eot_id|>", "").trim();
+      }
 
       setMessages(prev => [...prev, { role: "ai", content: aiResponse }]);
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: "ai", content: "My neural link to Hugging Face is currently busy. Please check back in a moment!" }]);
+      setMessages(prev => [...prev, { role: "ai", content: "Connection busy. Please try asking again in a few seconds!" }]);
     } finally {
       setIsTyping(false);
     }
