@@ -20,11 +20,11 @@ import {
   Loader2,
   Bot
 } from "lucide-react";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { GoogleGenAI } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
-const model = "gemini-3-flash-preview";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
+const modelName = "gemini-1.5-flash"; // Using a more standard model name
 
 const PROJECTS = [
   {
@@ -73,15 +73,15 @@ const PROJECTS = [
   }
 ];
 
+function DatabaseIcon(props: any) {
+  return <Database {...props} />;
+}
+
 const SKILLS = [
   { name: "Languages", items: ["Python", "TypeScript", "JavaScript", "SQL", "C++"], icon: Code },
   { name: "Technologies", items: ["React", "Docker", "Git", "FastAPI", "TensorFlow"], icon: Cpu },
-  { name: "Systems", items: ["Linux", "AWS", "Firebase", "PostgreSQL"], icon: DataLensIcon },
+  { name: "Systems", items: ["Linux", "AWS", "Firebase", "PostgreSQL"], icon: DatabaseIcon },
 ];
-
-function DataLensIcon(props: any) {
-  return <Database {...props} />;
-}
 
 export default function App() {
   const [isAiOpen, setIsAiOpen] = useState(false);
@@ -91,6 +91,19 @@ export default function App() {
   const [input, setInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const ai = useMemo(() => {
+    try {
+      if (!GEMINI_API_KEY || GEMINI_API_KEY === "MY_GEMINI_API_KEY") {
+        console.warn("Gemini API Key is missing or default.");
+        return null;
+      }
+      return new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+    } catch (e) {
+      console.error("Failed to initialize GoogleGenAI:", e);
+      return null;
+    }
+  }, []);
 
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, {
@@ -109,6 +122,11 @@ export default function App() {
 
   const handleSendMessage = async () => {
     if (!input.trim() || isTyping) return;
+    if (!ai) {
+      setMessages(prev => [...prev, { role: "user", content: input.trim() }, { role: "ai", content: "I'm sorry, my AI core is not configured. Please set a valid API key." }]);
+      setInput("");
+      return;
+    }
 
     const userMessage = input.trim();
     setInput("");
@@ -117,7 +135,7 @@ export default function App() {
 
     try {
       const response = await ai.models.generateContent({
-        model,
+        model: modelName,
         contents: userMessage,
         config: {
           systemInstruction: `You are Aura, the AI assistant for Shashank Dubey's e-portfolio. 
